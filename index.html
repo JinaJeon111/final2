@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pixel Clock with Blind Effect</title>
+  <style>
+    @font-face {
+        font-family: 'establishRetrosansOTF';
+        src: url('https://fastly.jsdelivr.net/gh/projectnoonnu/noonfonts_2112@1.0/establishRetrosansOTF.woff') format('woff');
+        font-weight: normal;
+        font-style: normal;
+    }
+
+    body {
+      margin: 0;
+      background: black;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    .blind {
+      position: absolute;
+      background: white;
+      color: black;
+      font-family: Arial, sans-serif;
+      font-size: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    #currentTimeLabel {
+      position: absolute;
+      top: 30%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: grey;
+      font-size: 50px;
+      text-align: center;
+      z-index: -1;
+    }
+
+  </style>
+</head>
+<body>
+  <canvas id="clockCanvas"></canvas>
+  
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+    import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-analytics.js";
+
+    // Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyD-uEPBMeMZ6C5w7Fi-6MM_bjjYdgiEuW0",
+      authDomain: "crucial-zodiac-440304-t8.firebaseapp.com",
+      projectId: "crucial-zodiac-440304-t8",
+      storageBucket: "crucial-zodiac-440304-t8.firebasestorage.app",
+      messagingSenderId: "31105663068",
+      appId: "1:31105663068:web:655d5c34c235e21251a699",
+      measurementId: "G-WDR9TH898C",
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app); // Pass the initialized app
+    const analytics = getAnalytics(app);
+
+    // Firestore data fetching
+    async function fetchFirestoreTexts() {
+      try {
+        const snapshot = await getDocs(collection(db, "shorts_titles"));
+        const texts = snapshot.docs.flatMap(doc => 
+          doc.data().titles.map(item => item.title)
+        );
+        return texts;
+      } catch (error) {
+        console.error("Error fetching Firestore texts:", error);
+        return [];
+      }
+    }
+
+
+
+    async function getRandomText() {
+      const texts = await fetchFirestoreTexts();
+      return texts.length > 0
+        ? texts[Math.floor(Math.random() * texts.length)]
+        : "No content available";
+    }
+
+    const canvas = document.getElementById('clockCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const textSize = 140;
+    const blockSize = 10;
+    const fontName = 'establishRetrosansOTF';
+    const font = `${textSize}px ${fontName}`;
+
+    let trails = [];
+    let blinds = [];
+    window.blinds = blinds;
+    let blindSpeed = 7;
+    let speedIncrement = 0.0065;
+    let blocks = [];
+    let disabledAreas = [];
+    let fragments = [];
+    let trailBuffer = 10;
+    const maxTrailBuffer = 30;
+    const bufferIncrement = 0.05;
+    let isSwiping = false; // 스와이프 상태를 추적
+
+
+    createBlind(0, -canvas.height, canvas.width, canvas.height, 0, blindSpeed, await getRandomText());
+
+    function createBlind(x, y, width, height, dx, dy, text = "") {
+      blinds.push({ x, y, width, height, dx, dy, text });
+    }
+
+    // updateBlinds 함수 수정
+    function updateBlinds() {
+      blinds.forEach(async (blind, index) => {
+        // 블라인드의 중앙 좌표
+        const blindCenterX = blind.x + blind.width / 2;
+        const blindCenterY = blind.y + blind.height / 2;
+
+        // 화면의 중앙 좌표
+        const canvasCenterX = canvas.width / 2;
+        const canvasCenterY = canvas.height / 2;
+
+        // 블라인드가 화면 중앙에 도달했는지 확인
+        const isCentered =
+          Math.abs(blindCenterX - canvasCenterX) < 10 &&
+          Math.abs(blindCenterY - canvasCenterY) < 10;
+
+        if (!isCentered || (blind.dx !== 0 || blind.dy !== 0)) {
+          // 중앙에 도달하지 않았거나 dx/dy가 변경되었으면 블라인드 이동
+          blind.x += blind.dx;
+          blind.y += blind.dy;
+
+          // 중앙 도달 후 dx/dy를 초기화 (스와이프 후 동작을 위해)
+          if (isCentered && blind.dx === 0 && blind.dy === 0) {
+            blind.dx = 0;
+            blind.dy = 0;
+          }
+        }
+
+        // 블라인드가 화면을 완전히 벗어났을 때
+        if (
+          blind.y + blind.height < 0 ||
+          blind.y > canvas.height ||
+          blind.x + blind.width < 0 ||
+          blind.x > canvas.width
+        ) {
+          blinds.splice(index, 1);
+
+          // 새 블라인드 생성
+          const randomDirection = [
+            { x: 0, y: -canvas.height, dx: 0, dy: blindSpeed, text: await getRandomText() },
+            { x: 0, y: canvas.height, dx: 0, dy: -blindSpeed, text: await getRandomText() },
+            { x: -canvas.width, y: 0, dx: blindSpeed, dy: 0, text: await getRandomText() },
+            { x: canvas.width, y: 0, dx: -blindSpeed, dy: 0, text: await getRandomText() }
+          ][Math.floor(Math.random() * 4)];
+          createBlind(
+            randomDirection.x,
+            randomDirection.y,
+            canvas.width,
+            canvas.height,
+            randomDirection.dx,
+            randomDirection.dy,
+            randomDirection.text
+          );
+        }
+
+        // 블라인드 렌더링
+        ctx.fillStyle = 'white';
+        ctx.fillRect(blind.x, blind.y, blind.width, blind.height);
+
+        // 화살표 추가
+        ctx.font = "30px Arial";
+        ctx.fillStyle = "black";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        if (blind.dx > 0) {
+          // 오른쪽으로 이동하는 경우 (왼쪽 "<"와 오른쪽 ">")
+          //ctx.fillText("<", blind.x + 20, blind.y + blind.height / 2);
+          ctx.fillText(">", blind.x + blind.width - 20, blind.y + blind.height / 2);
+        } else if (blind.dx < 0) {
+          // 왼쪽으로 이동하는 경우 (왼쪽 "<"와 오른쪽 ">")
+          ctx.fillText("<", blind.x + 20, blind.y + blind.height / 2);
+          //ctx.fillText(">", blind.x + blind.width - 20, blind.y + blind.height / 2);
+        } else if (blind.dy > 0) {
+          // 아래로 이동하는 경우 (위쪽 "∧"와 아래쪽 "∨")
+          //ctx.fillText("∧", blind.x + blind.width / 2, blind.y + 20);
+          ctx.fillText("∨", blind.x + blind.width / 2, blind.y + blind.height - 20);
+        } else if (blind.dy < 0) {
+          // 위로 이동하는 경우 (위쪽 "∧"와 아래쪽 "∨")
+          ctx.fillText("∧", blind.x + blind.width / 2, blind.y + 20);
+          //ctx.fillText("∨", blind.x + blind.width / 2, blind.y + blind.height - 20);
+        }
+
+        // 블라인드 텍스트 렌더링
+        if (blind.text) {
+          ctx.font = "20px Arial";
+          ctx.fillStyle = "black";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(blind.text, blind.x + blind.width / 2, blind.y + blind.height / 2);
+        }
+      });
+
+      blindSpeed += speedIncrement;
+    }
+
+
+
+
+
+
+    function drawTime() {
+  const now = new Date();
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  const seconds = String(now.getSeconds()).padStart(2, "0");
+  const milliseconds = String(now.getMilliseconds()).padStart(3, "0");
+  const timeText = `${hours}:${minutes}:${seconds}:${milliseconds}`;
+
+  ctx.font = font;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillStyle = "white";
+
+  const textWidth = ctx.measureText(timeText).width;
+  ctx.fillText(timeText, canvas.width / 2, canvas.height / 2);
+
+  const imageData = ctx.getImageData(
+    canvas.width / 2 - textWidth / 2,
+    canvas.height / 2 - textSize / 2,
+    textWidth,
+    textSize
+  );
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  blocks = [];
+  for (let y = 0; y < imageData.height; y += blockSize) {
+    for (let x = 0; x < imageData.width; x += blockSize) {
+      const pixelIndex = (y * imageData.width + x) * 4;
+      const alpha = imageData.data[pixelIndex + 3];
+
+      if (alpha > 128) {
+        const block = {
+          x: canvas.width / 2 - textWidth / 2 + x,
+          y: canvas.height / 2 - textSize / 2 + y,
+          width: blockSize - 1,
+          height: blockSize - 1,
+        };
+
+        // 비활성화된 영역인지 확인
+        const isDisabled = disabledAreas.some(
+          (area) =>
+            block.x + block.width > area.x &&
+            block.x < area.x + area.width &&
+            block.y + block.height > area.y &&
+            block.y < area.y + area.height
+        );
+
+        if (!isDisabled) {
+          blocks.push(block);
+        }
+      }
+    }
+  }
+
+  drawBlocks();
+}
+
+
+
+
+      
+
+function drawBlocks() {
+  if (trailBuffer < maxTrailBuffer) {
+    trailBuffer = Math.min(trailBuffer + bufferIncrement, maxTrailBuffer);
+  }
+
+  blocks.forEach((block, index) => {
+    // 비활성화된 영역인지 확인
+    const isDisabled = disabledAreas.some(
+      (area) =>
+        block.x + block.width > area.x &&
+        block.x < area.x + area.width &&
+        block.y + block.height > area.y &&
+        block.y < area.y + area.height
+    );
+
+    if (isDisabled) return; // 비활성화된 영역은 그리지 않음
+
+    // 블록이 스와이프 경로에 있는지 확인 (스와이프 중일 때만 반응)
+    const isInTrail =
+      isSwiping &&
+      trails.some((trail) => {
+        return (
+          trail.x + trailBuffer > block.x &&
+          trail.x - trailBuffer < block.x + block.width &&
+          trail.y + trailBuffer > block.y &&
+          trail.y - trailBuffer < block.y + block.height
+        );
+      });
+
+    if (isInTrail) {
+      // 블록 파편화 로직
+      const fragmentCount = 8; // 블록을 4조각으로 나눔
+      for (let i = 0; i < fragmentCount; i++) {
+        const dx = (i % 2 === 0 ? -1 : 1) * Math.random(); // 좌우로 흩어지는 방향
+        const dy = (i < 2 ? -1 : 1) * Math.random(); // 위아래로 흩어지는 방향
+        const fragmentSize = block.width / 2; // 블록을 4등분
+
+        fragments.push({
+          x: block.x + (i % 2) * fragmentSize, // 왼쪽 또는 오른쪽
+          y: block.y + (i < 2 ? 0 : fragmentSize), // 위쪽 또는 아래쪽
+          dx: dx * 2, // 초기 수평 속도
+          dy: dy * 2, // 초기 수직 속도
+          size: fragmentSize,
+          opacity: 1,
+        });
+      }
+
+      // 비활성화 영역 추가
+      disabledAreas.push({
+        x: block.x,
+        y: block.y,
+        width: block.width,
+        height: block.height,
+      });
+
+      blocks.splice(index, 1); // 블록 제거
+    } else {
+      ctx.fillStyle = "white";
+      ctx.fillRect(block.x, block.y, block.width, block.height);
+    }
+  });
+
+  // 파편 렌더링 및 업데이트
+  drawFragments();
+}
+
+
+
+
+
+
+
+let settledFragments = []; // 바닥에 쌓인 파편 저장
+
+function drawFragments() {
+  const gravity = 0.2; // 중력 효과
+
+  fragments.forEach((fragment, index) => {
+    ctx.fillStyle = `rgba(255, 255, 255, ${fragment.opacity})`;
+    ctx.fillRect(fragment.x, fragment.y, fragment.size, fragment.size);
+
+    // 위치 업데이트
+    fragment.x += fragment.dx;
+    fragment.y += fragment.dy;
+
+    // 중력 효과 적용
+    fragment.dy += gravity;
+
+    // 바닥이나 다른 조각과 충돌 확인
+    const isColliding = settledFragments.some((settled) => {
+      return (
+        fragment.y + fragment.size >= settled.y && // 충돌 조건
+        fragment.y <= settled.y + settled.size &&
+        fragment.x + fragment.size >= settled.x &&
+        fragment.x <= settled.x + settled.size
+      );
+    });
+
+    if (fragment.y + fragment.size >= canvas.height || isColliding) {
+      // 바닥이나 다른 조각과 충돌했을 때 정착
+      fragment.y = Math.min(fragment.y, canvas.height - fragment.size); // 바닥에서 멈춤
+      fragment.dy = 0; // 수직 속도 제거
+      fragment.dx = 0; // 수평 속도 제거
+
+      // 쌓인 조각 배열에 추가
+      settledFragments.push({
+        x: fragment.x,
+        y: fragment.y,
+        size: fragment.size,
+      });
+
+      fragments.splice(index, 1); // 떨어진 조각 제거
+    }
+
+    // 투명도 감소 (작아진 조각 제거)
+    fragment.opacity -= 0.01;
+    if (fragment.opacity <= 0 || fragment.size <= 0) {
+      fragments.splice(index, 1);
+    }
+  });
+
+  // 쌓인 조각 렌더링
+  settledFragments.forEach((settled) => {
+    ctx.fillStyle = `rgba(255, 255, 255, 1)`; // 고정된 조각은 불투명하게
+    ctx.fillRect(settled.x, settled.y, settled.size, settled.size);
+  });
+}
+
+
+
+
+
+
+
+
+        function recoverDisabledAreas() {
+          setInterval(() => {
+            if (disabledAreas.length > 0) {
+              // 가장 오래된 비활성화된 영역을 제거
+              disabledAreas.shift();
+            }
+          }, 250); // 5초마다 복구
+        }
+
+        // 복구 함수 실행
+        recoverDisabledAreas();
+
+
+
+
+        function drawTrails() {
+          if (trails.length < 2) return;
+
+          ctx.lineCap = 'round';
+          for (let i = trails.length - 1; i > 0; i--) {
+            const trailStart = trails[i];
+            const trailEnd = trails[i - 1];
+            const opacity = trailStart.opacity;
+
+            if (opacity <= 0) continue;
+
+            ctx.beginPath();
+            ctx.lineWidth = Math.max(10 - (trails.length - i) * 1, 2);
+            ctx.strokeStyle = `rgba(255, 0, 0, ${opacity})`; // 빨간색 꼬리
+            ctx.moveTo(trailStart.x, trailStart.y);
+            ctx.lineTo(trailEnd.x, trailEnd.y);
+            ctx.stroke();
+            ctx.closePath();
+          }
+
+          trails = trails.filter(trail => trail.opacity > 0);
+        }
+
+        canvas.addEventListener('mousemove', (event) => {
+          const mouseX = event.clientX;
+          const mouseY = event.clientY;
+
+          trails.push({ x: mouseX, y: mouseY, opacity: 1 });
+
+          if (trails.length > 10) {
+            trails.shift();
+          }
+        });
+
+
+        // 스와이프 이벤트 핸들링
+canvas.addEventListener('mousedown', (event) => {
+  const swipeStart = { x: event.clientX, y: event.clientY };
+  isSwiping = true; // 스와이프 시작
+
+  canvas.addEventListener(
+    'mouseup',
+    (e) => {
+      const swipeEnd = { x: e.clientX, y: e.clientY };
+
+      // 스와이프 방향 계산
+      const dx = swipeEnd.x - swipeStart.x;
+      const dy = swipeEnd.y - swipeStart.y;
+
+      // 방향 제한: 상하좌우 중 가장 큰 변위를 기준으로
+      let directionX = 0;
+      let directionY = 0;
+
+      if (Math.abs(dx) > Math.abs(dy)) {
+        // 수평 이동
+        directionX = dx > 0 ? 1 : -1; // 오른쪽 또는 왼쪽
+      } else {
+        // 수직 이동
+        directionY = dy > 0 ? 1 : -1; // 아래 또는 위
+      }
+
+      blinds.forEach((blind) => {
+        // 스와이프 시 상하좌우로만 이동
+        blind.dx = directionX * 200; // 수평 속도
+        blind.dy = directionY * 100; // 수직 속도
+      });
+
+      isSwiping = false; // 스와이프 종료
+      trails = []; // 스와이프 경로 초기화
+    },
+    { once: true }
+  );
+});
+
+
+
+
+
+    function update() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawTime();
+      updateBlinds();
+      drawTrails();
+      requestAnimationFrame(update);
+    }
+
+    update();
+
+    window.addEventListener('resize', () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    });
+  </script>
+</body>
+</html>
